@@ -1,13 +1,13 @@
 # Gagent Harness 设计目录
 
-Gagent 可实现的 harness 清单，按 learn-claude-code 六阶段递进组织，并映射到 `reference/` 中的生产级实现。选型后到 `AGENTS.md`（工作区根）的「Harness 注册表」登记实现状态。
+Gagent 可实现的 harness 清单，按 learn-claude-code 六阶段递进组织，并映射到 `../reference/` 中的生产级实现。选型后到 `AGENTS.md`（工作区根）的「Harness 注册表」登记实现状态。
 
 ## 参考路径缩写
 
-- `lc` = `reference/learn-claude-code/`（教学式 s01–s20，每章一个 `code.py`）
-- `pico3` = `reference/pico-v3/`（pico v3 分支纯文件快照，生产级，`core/` 最丰富）
-- `picoM` = `reference/pico/`（pico main 分支）
-- `any` = `reference/AnyCoder/`（litellm 多 provider + tools/prompts 分包）
+- `lc` = `../reference/learn-claude-code/`（教学式 s01-s20，每章一个 `code.py`）
+- `pico3` = `../reference/pico-v3/`（pico v3 分支纯文件快照，生产级，`pico/core/` 最丰富）
+- `picoM` = `../reference/pico/`（pico main 分支）
+- `any` = `../reference/AnyCoder/`（LiteLLM 多 provider + tools/prompts 分包）
 
 ## 阶段 1 — 让 agent 能动手
 
@@ -77,10 +77,19 @@ learn-claude-code 的 s01→s20 是教学递进，但做产品要更早打底座
 
 1. **Provider 抽象 + Agent Loop + Tool Use**（最小能跑的 agent，接一个 LLM 就能对话+用工具）
 2. **Workspace 上下文 + System Prompt**（落地到真实项目目录）
-3. **Permission**（给 bash/写文件加边界，安全）
-4. **TodoWrite + Context Compact**（能做稍长任务）
-5. **Session 持久化/Checkpoint**（能 resume）
-6. **Subagent + Error Recovery + Hooks**
-7. 之后按需：Memory / Skill / Background / Task System / 团队 / MCP / TUI / Eval
+3. **Permission / Sandbox**（先给 bash/写文件加边界，再扩大工具能力）
+4. **Session 持久化**（先有轻量 session model，支撑 resume、compact 和 debug）
+5. **Context Compact**（上下文快满时可压缩、可恢复、可继续）
+6. **Error Recovery**（重试、腾空间、切模型、换策略）
+7. **Todo / Trace / State**（尽早记录任务进度和运行事件，后续再升级为完整观测）
+8. **Memory**（在稳定 session/compact 基础上沉淀长期偏好和项目知识）
+9. **Hooks**（把检查、补救、通知挂到循环边界）
+10. **Slash Command**（暴露 `/compact` `/clear` 等用户可控入口）
+11. **Skills**（按需加载领域能力，不把所有说明塞进 prompt）
+12. **MCP**（把外部工具接进统一工具池）
+13. **Background Task**（慢操作后台化，完成后注入通知）
+14. **Task System / 团队**（任务编排、子 agent、团队协作和 worktree 隔离）
+15. **Eval**（用评测闭环质量、成本和回归）
 
 横切的 **Provider 抽象**放最前——它决定整个 LLM 调用层形状，后补很痛。
+**Checkpoint** 不建议作为 MVP 硬前置：先实现轻量 Session 持久化，完整运行快照、fork、任务状态恢复等能力可以在 Background Task / Task System 阶段补齐。
