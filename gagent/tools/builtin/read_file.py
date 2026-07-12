@@ -26,7 +26,7 @@ def read_file_tool() -> RegisteredTool:
 
 
 def _read_file(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
-    path = resolve_workspace_path(context.cwd, str(args.get("path", "")))
+    path = resolve_workspace_path(context, str(args.get("path", "")))
     if not path.is_file():
         return ToolResult(content=f"error: path is not a file: {args.get('path', '')}", is_error=True)
 

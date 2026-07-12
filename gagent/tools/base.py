@@ -1,9 +1,13 @@
 """Base tool contracts."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+from gagent.core.workspace import WorkspaceContext
 
 RiskLevel = Literal["low", "medium", "high"]
 ToolCategory = Literal["read", "write", "execute"]
@@ -14,6 +18,27 @@ class ToolExecutionContext:
     """Runtime context passed to tool implementations."""
 
     cwd: Path
+    workspace: WorkspaceContext | None = None
+
+    def resolve_path(self, raw_path: str) -> Path:
+        if self.workspace is not None:
+            return self.workspace.resolve_path(raw_path)
+        return _resolve_cwd_path(self.cwd, raw_path)
+
+    def relative_path(self, path: Path) -> str:
+        if self.workspace is not None:
+            return self.workspace.relative_to_root(path)
+        return path.resolve().relative_to(self.cwd.resolve()).as_posix()
+
+
+def _resolve_cwd_path(cwd: Path, raw_path: str) -> Path:
+    if not raw_path:
+        raise ValueError("path is required")
+    root = cwd.resolve()
+    path = (root / raw_path).resolve()
+    if not path.is_relative_to(root):
+        raise ValueError(f"path escapes workspace: {raw_path}")
+    return path
 
 
 @dataclass(frozen=True)

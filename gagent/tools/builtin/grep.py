@@ -60,7 +60,7 @@ def _grep(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
         return ToolResult(content="error: pattern is required", is_error=True)
 
     raw_path = str(args.get("path") or ".")
-    path = resolve_workspace_path(context.cwd, raw_path)
+    path = resolve_workspace_path(context, raw_path)
     if not path.exists():
         return ToolResult(content=f"error: path does not exist: {raw_path}", is_error=True)
 
@@ -72,7 +72,7 @@ def _grep(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
     if shutil.which("rg"):
         return _grep_with_rg(
             pattern=pattern,
-            root=context.cwd.resolve(),
+            root=_workspace_root(context),
             path=path,
             include=include_pattern,
             literal=literal,
@@ -80,7 +80,7 @@ def _grep(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
         )
     return _grep_with_python(
         pattern=pattern,
-        root=context.cwd.resolve(),
+        root=_workspace_root(context),
         path=path,
         include=include_pattern,
         literal=literal,
@@ -192,3 +192,9 @@ def _positive_int(value: Any, *, default: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(1, min(parsed, maximum))
+
+
+def _workspace_root(context: ToolExecutionContext) -> Path:
+    if context.workspace is not None:
+        return context.workspace.repo_root
+    return context.cwd.resolve()

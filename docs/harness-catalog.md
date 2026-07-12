@@ -78,18 +78,18 @@ learn-claude-code 的 s01→s20 是教学递进，但做产品要更早打底座
 1. **Provider 抽象 + Agent Loop + Tool Use**（最小能跑的 agent，接一个 LLM 就能对话+用工具）
 2. **Workspace 上下文 + System Prompt**（落地到真实项目目录）
 3. **Permission / Sandbox**（先给 bash/写文件加边界，再扩大工具能力）
-4. **Session 持久化**（先有轻量 session model，支撑 resume、compact 和 debug）
-5. **Context Compact**（上下文快满时可压缩、可恢复、可继续）
-6. **Error Recovery**（重试、腾空间、切模型、换策略）
-7. **Todo / Trace / State**（尽早记录任务进度和运行事件，后续再升级为完整观测）
-8. **Memory**（在稳定 session/compact 基础上沉淀长期偏好和项目知识）
-9. **Hooks**（把检查、补救、通知挂到循环边界）
-10. **Slash Command**（暴露 `/compact` `/clear` 等用户可控入口）
+4. **Hooks / Runtime Events**（把检查、补救、通知挂到循环边界，避免继续膨胀 Engine）
+5. **TodoWrite / Task Progress State**（复杂任务先列步骤，运行中持续更新进度）
+6. **Session 持久化 / Resume**（先有轻量 session model，支撑恢复、compact 和 debug）
+7. **Slash Command**（先暴露 `/status` `/tools` `/clear`，后续自然扩展 `/compact`）
+8. **Context Compact**（上下文快满时可压缩、可恢复、可继续）
+9. **Error Recovery**（基于 session/compact 做重试、腾空间、切模型、换策略）
+10. **Memory**（在稳定 session/compact 基础上沉淀长期偏好和项目知识）
 11. **Skills**（按需加载领域能力，不把所有说明塞进 prompt）
 12. **MCP**（把外部工具接进统一工具池）
 13. **Background Task**（慢操作后台化，完成后注入通知）
-14. **Task System / 团队**（任务编排、子 agent、团队协作和 worktree 隔离）
-15. **Eval**（用评测闭环质量、成本和回归）
+14. **Subagent / Task System / Worktree Isolation**（任务编排、子 agent、团队协作和目录隔离）
+15. **Eval / Benchmark**（用评测闭环质量、成本和回归；轻量 smoke eval 可从早期持续积累）
 
 横切的 **Provider 抽象**放最前——它决定整个 LLM 调用层形状，后补很痛。
 **Checkpoint** 不建议作为 MVP 硬前置：先实现轻量 Session 持久化，完整运行快照、fork、任务状态恢复等能力可以在 Background Task / Task System 阶段补齐。

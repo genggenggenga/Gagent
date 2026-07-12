@@ -34,7 +34,7 @@ def list_dir_tool() -> RegisteredTool:
 
 def _list_dir(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
     raw_path = str(args.get("path") or ".")
-    path = resolve_workspace_path(context.cwd, raw_path)
+    path = resolve_workspace_path(context, raw_path)
     if not path.is_dir():
         return ToolResult(content=f"error: path is not a directory: {raw_path}", is_error=True)
 

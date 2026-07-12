@@ -13,6 +13,7 @@ from gagent.core.run_store import RunStore
 from gagent.core.runtime_events import build_runtime_event
 from gagent.core.session_events import SessionEventBus
 from gagent.core.task_state import TaskState
+from gagent.core.workspace import WorkspaceContext
 from gagent.providers.base import Provider
 from gagent.providers.types import ToolCall
 from gagent.tools.base import ToolExecutionContext
@@ -53,8 +54,14 @@ class GagentRuntime:
         self.config = config
         self.tools = tools or build_builtin_registry()
         self.tool_profile = resolve_tool_profile(self.tools, config.tool_profile)
-        self.tool_context = ToolExecutionContext(cwd=config.cwd)
-        self.messages = messages or [system_message(build_system_prompt(config.cwd))]
+        self.workspace = WorkspaceContext.build(config.cwd)
+        self.tool_context = ToolExecutionContext(cwd=config.cwd, workspace=self.workspace)
+        self.system_prompt = build_system_prompt(
+            workspace=self.workspace,
+            tools=self.tools,
+            profile=self.tool_profile,
+        )
+        self.messages = messages or [system_message(self.system_prompt.text)]
         self.session_id = _new_session_id()
         self.session_dir = config.cwd / ".gagent" / "sessions"
         self.run_store = RunStore(config.cwd / ".gagent" / "runs")
@@ -69,7 +76,12 @@ class GagentRuntime:
         self._trace_seq = 0
         self.session_event_bus.emit(
             "session_started",
-            {"workspace_root": str(config.cwd), "model": config.model},
+            {
+                "workspace_root": str(self.workspace.repo_root),
+                "cwd": str(self.workspace.cwd),
+                "model": config.model,
+                "system_prompt_hash": self.system_prompt.hash,
+            },
         )
         self.engine = Engine(self)
 

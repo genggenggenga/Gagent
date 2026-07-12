@@ -1,5 +1,7 @@
 from pathlib import Path
+import subprocess
 
+from gagent.core.workspace import WorkspaceContext
 from gagent.tools.base import ToolExecutionContext
 from gagent.tools.registry import build_builtin_registry, resolve_tool_profile
 
@@ -46,6 +48,33 @@ def test_read_and_write_file_tools_stay_inside_workspace(tmp_path: Path):
 
     assert not write_result.is_error
     assert "hello" in read_result.content
+    assert escape_result.is_error
+
+
+def test_file_tools_use_workspace_boundary_from_subdirectory(tmp_path: Path):
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "README.md").write_text("# Root\n", encoding="utf-8")
+    src = tmp_path / "src"
+    src.mkdir()
+    registry = build_builtin_registry()
+    profile = resolve_tool_profile(registry, "readonly")
+    workspace = WorkspaceContext.build(src)
+    context = ToolExecutionContext(cwd=src, workspace=workspace)
+
+    read_result = registry.execute(
+        "read_file",
+        {"path": "../README.md"},
+        context,
+        profile,
+    )
+    escape_result = registry.execute(
+        "read_file",
+        {"path": "../../outside.txt"},
+        context,
+        profile,
+    )
+
+    assert "# Root" in read_result.content
     assert escape_result.is_error
 
 

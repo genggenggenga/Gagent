@@ -9,6 +9,7 @@
 | 阶段 | 日期 | 记录 |
 |------|------|------|
 | Harness 1：Provider 抽象 + Agent Loop + Tool Use | 2026-07-11 | [01-provider-loop-tools.md](implementation-logs/01-provider-loop-tools.md) |
+| Harness 2：Workspace 上下文 + System Prompt | 2026-07-12 | [02-workspace-system-prompt.md](implementation-logs/02-workspace-system-prompt.md) |
 
 ## 新增记录约定
 

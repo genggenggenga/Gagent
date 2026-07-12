@@ -76,6 +76,20 @@ def test_agent_loop_executes_tool_calls(tmp_path: Path):
     assert not result.hit_step_limit
 
 
+def test_runtime_builds_workspace_aware_system_prompt(tmp_path: Path):
+    (tmp_path / "AGENTS.md").write_text("# Rules\nUse tiny edits.\n", encoding="utf-8")
+    runtime = GagentRuntime(
+        provider=LengthStopProvider(),
+        config=AgentConfig(cwd=tmp_path, model="fake-model", stream=False),
+    )
+
+    assert runtime.workspace.repo_root == tmp_path.resolve()
+    assert runtime.messages[0]["role"] == "system"
+    assert "## Workspace" in runtime.messages[0]["content"]
+    assert "### AGENTS.md" in runtime.messages[0]["content"]
+    assert runtime.system_prompt.workspace_fingerprint == runtime.workspace.fingerprint()
+
+
 def test_engine_emits_turn_events(tmp_path: Path):
     (tmp_path / "README.md").write_text("# Gagent\n", encoding="utf-8")
     runtime = GagentRuntime(

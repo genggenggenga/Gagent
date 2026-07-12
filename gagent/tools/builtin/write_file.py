@@ -1,6 +1,5 @@
 """Built-in file writing tool."""
 
-from pathlib import Path
 from typing import Any
 
 from gagent.tools.base import RegisteredTool, ToolExecutionContext, ToolResult
@@ -26,7 +25,7 @@ def write_file_tool() -> RegisteredTool:
 
 def _write_file(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
     raw_path = str(args.get("path", ""))
-    path = resolve_workspace_path(context.cwd, raw_path)
+    path = context.resolve_path(raw_path)
     if path.exists() and path.is_dir():
         return ToolResult(content=f"error: path is a directory: {raw_path}", is_error=True)
 
@@ -36,11 +35,7 @@ def _write_file(args: dict[str, Any], context: ToolExecutionContext) -> ToolResu
     return ToolResult(content=f"wrote {len(content.encode('utf-8'))} bytes to {raw_path}")
 
 
-def resolve_workspace_path(cwd: Path, raw_path: str) -> Path:
-    if not raw_path:
-        raise ValueError("path is required")
-    root = cwd.resolve()
-    path = (root / raw_path).resolve()
-    if not path.is_relative_to(root):
-        raise ValueError(f"path escapes workspace: {raw_path}")
-    return path
+def resolve_workspace_path(context: ToolExecutionContext, raw_path: str):
+    """Compatibility wrapper for built-in tools that still import this helper."""
+
+    return context.resolve_path(raw_path)

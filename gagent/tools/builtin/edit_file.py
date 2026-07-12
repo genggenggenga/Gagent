@@ -27,7 +27,7 @@ def edit_file_tool() -> RegisteredTool:
 
 def _edit_file(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult:
     raw_path = str(args.get("path", ""))
-    path = resolve_workspace_path(context.cwd, raw_path)
+    path = resolve_workspace_path(context, raw_path)
     if not path.is_file():
         return ToolResult(content=f"error: path is not a file: {raw_path}", is_error=True)
 
