@@ -6,6 +6,7 @@ dist/
 build/
 .pytest_cache/
 .ruff_cache/
+.gagent/
 *.log
 .env
 .DS_Store
