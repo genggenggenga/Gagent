@@ -25,7 +25,11 @@
   - `gagent/tools/base.py`
   - `gagent/tools/registry.py`
   - `gagent/tools/builtin/bash.py`
+  - `gagent/tools/builtin/list_dir.py`
+  - `gagent/tools/builtin/glob.py`
+  - `gagent/tools/builtin/grep.py`
   - `gagent/tools/builtin/read_file.py`
+  - `gagent/tools/builtin/edit_file.py`
   - `gagent/tools/builtin/write_file.py`
 - 更新 CLI 入口：
   - `gagent/cli.py`
@@ -51,7 +55,14 @@
   - 每次用户请求写入 `.gagent/runs/<run_id>/task_state.json`、`trace.jsonl` 和 `report.json`。
   - CLI 对工具调用使用带颜色的 `[tool]` 前缀展示，便于区分模型文本和工具执行。
 - 第一阶段只做工具 profile 过滤，不做完整 Permission / Sandbox 审批。
-- 内置工具先保留 `bash`、`read_file`、`write_file` 三个最小集合；`edit_file`、`search`、`glob` 后续可作为 Tool Use 增强继续加入。
+- 内置工具已扩展为项目探索和小步编辑集合：
+  - `list_dir`：列出 workspace 内目录。
+  - `glob`：按 glob pattern 查找 workspace 文件。
+  - `grep`：在 workspace 文本文件中搜索内容，默认 regex，支持 `literal=true` 字面量搜索和 `include` 文件过滤。
+  - `read_file`：按行读取文件。
+  - `edit_file`：精确替换唯一文本片段。
+  - `write_file`：写入文件。
+  - `bash`：执行 shell，并结构化返回 `exit_code`、`stdout`、`stderr`。
 - Workspace 只用 `cwd` 作为路径边界，完整 `WorkspaceContext` 放到下一阶段实现。
 
 ## 结构调整
@@ -70,6 +81,18 @@
   - `Engine.run_turn()` 在 `turn_started`、`model_requested`、`model_completed`、`tool_started`、`tool_finished`、`turn_finished` 等边界发事件。
   - run trace 采用 JSONL 追加写，task state 和 report 采用 JSON 原子写，便于运行中观察和运行后复盘。
   - CLI 消费 `Engine.run_turn()` 事件，使用彩色 `[tool]` 前缀打印工具开始/结束状态。
+- Tool Use 增强继续保持“工具是动作边界”的约束：
+  - 所有文件工具都通过 workspace path 解析，避免越界。
+  - `readonly` profile 自动包含所有 `category=read` 工具。
+  - `no_shell` profile 隐藏 `bash`，但保留文件读写和精确编辑能力。
+  - `edit_file` 要求 `old_text` 在文件中唯一，避免模糊替换。
+  - `grep` 跳过 `.git`、`.gagent`、`.venv`、`__pycache__`、`node_modules` 等目录。
+- 搜索工具命名调研与落地：
+  - pico-v3 暴露的工具名是 `search`，参数为 `pattern` / `path`；实现上优先调用 `rg -n --smart-case --max-count 200`，没有 `rg` 时回退到 Python `rglob` + 行扫描。
+  - learn-claude-code 教学实现没有独立的 grep/search 文本搜索工具；它提供 `glob` 查文件，文本搜索可以通过 `bash` 执行 `grep` / `rg`。
+  - 当前本地 `../reference/` 中没有 Codex 源码项目可核验；按 Codex / coding agent 常见形态，更偏向通过 shell 使用 `rg` / `grep`。
+  - Gagent 最终选择对模型暴露 `grep`，对齐 Claude Code / AnyCoder 的 coding agent 习惯；实现采用 pico-v3 路线：优先 `rg -n --smart-case`，没有 `rg` 时 fallback 到 Python 搜索。
+  - `grep` 默认按 regex 搜索，`literal=true` 时按字面量搜索；`include` 支持按 glob pattern 限定文件范围，输出保持 `path:line:content` 形态，便于模型继续读取或编辑命中文件。
 - 参考 pico-v3 的 README 项目结构，将顶层目录调整为 `cli.py`、`config/`、`core/`、`features/`、`providers/`、`tools/`、`tui/`、`evaluation/`：
   - `prompt`、`workspace`、`session`、`context`、`permission`、`runtime events` 等运行时相关能力收敛到 `core/`。
   - `sandbox`、`memory`、`skills` 等产品功能收敛到 `features/`。
@@ -78,6 +101,6 @@
 ## 验证记录
 
 - `uv sync --extra dev`：已完成依赖同步，`litellm` / `python-dotenv` 可正常导入。
-- `uv run pytest`：9 个测试全部通过。
-- `uv run ruff check .`：通过。
-- `uv run gagent --list-tools --tool-profile readonly`：能按工具 profile 只展示 `read_file`。
+- `/Users/bytedance/.local/bin/uv run pytest -q`：16 个测试全部通过。
+- `/Users/bytedance/.local/bin/uv run ruff check`：通过。
+- `/Users/bytedance/.local/bin/uv run gagent --list-tools --tool-profile readonly`：能按工具 profile 展示 `glob`、`grep`、`list_dir`、`read_file`。

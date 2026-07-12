@@ -61,6 +61,29 @@ def _run_bash(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult
     except OSError as exc:
         return ToolResult(content=f"error: {exc}", is_error=True)
 
-    output = (result.stdout + result.stderr).strip() or "(no output)"
-    content = f"exit_code: {result.returncode}\n{output[:50000]}"
-    return ToolResult(content=content, is_error=result.returncode != 0)
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    content = "\n".join(
+        [
+            f"exit_code: {result.returncode}",
+            "stdout:",
+            _clip_output(stdout) if stdout else "(empty)",
+            "stderr:",
+            _clip_output(stderr) if stderr else "(empty)",
+        ]
+    )
+    return ToolResult(
+        content=content,
+        is_error=result.returncode != 0,
+        metadata={
+            "exit_code": result.returncode,
+            "stdout_chars": len(result.stdout),
+            "stderr_chars": len(result.stderr),
+        },
+    )
+
+
+def _clip_output(text: str, limit: int = 50000) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 24] + "\n... (output truncated)"

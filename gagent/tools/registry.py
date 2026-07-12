@@ -5,6 +5,10 @@ from typing import Any
 
 from gagent.tools.base import RegisteredTool, ToolExecutionContext, ToolResult
 from gagent.tools.builtin.bash import bash_tool
+from gagent.tools.builtin.edit_file import edit_file_tool
+from gagent.tools.builtin.grep import grep_tool
+from gagent.tools.builtin.glob import glob_tool
+from gagent.tools.builtin.list_dir import list_dir_tool
 from gagent.tools.builtin.read_file import read_file_tool
 from gagent.tools.builtin.write_file import write_file_tool
 
@@ -57,7 +61,17 @@ class ToolRegistry:
 
 
 def build_builtin_registry() -> ToolRegistry:
-    return ToolRegistry([bash_tool(), read_file_tool(), write_file_tool()])
+    return ToolRegistry(
+        [
+            bash_tool(),
+            list_dir_tool(),
+            glob_tool(),
+            grep_tool(),
+            read_file_tool(),
+            edit_file_tool(),
+            write_file_tool(),
+        ]
+    )
 
 
 def build_tool_profiles(registry: ToolRegistry) -> dict[str, ToolProfile]:

@@ -91,6 +91,7 @@ class GagentRuntime:
             "name": tool_call.name,
             "is_error": result.is_error,
             "content": result.content,
+            "metadata": result.metadata or {},
         }
 
     def start_task(self, user_message: str) -> TaskState:
