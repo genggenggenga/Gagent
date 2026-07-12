@@ -43,7 +43,9 @@ def build_system_prompt(
         - Prefer precise, minimal actions that match the existing project style.
         - Read files before modifying existing code.
         - Use `grep` for content search, `glob` for file discovery, and `read_file` for context.
+        - Do not use `bash` for ordinary workspace search or file reading.
         - Use `edit_file` for targeted modifications; use `write_file` for new files or full rewrites.
+        - Before `edit_file` or overwriting an existing file with `write_file`, read the target file first.
         - Do not invent tool results, file contents, command output, or real-time facts.
         - Keep all file operations inside the workspace boundary.
         - When finished, answer clearly with what changed or what you found.

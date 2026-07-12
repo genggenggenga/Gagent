@@ -41,4 +41,7 @@ def resolve_runtime_config(args: Any) -> AgentConfig:
         max_steps=args.max_steps,
         stream=not args.no_stream,
         tool_profile=args.tool_profile,
+        approval_policy=args.approval_policy,
+        sandbox_mode=args.sandbox,
+        sandbox_backend=args.sandbox_backend,
     )

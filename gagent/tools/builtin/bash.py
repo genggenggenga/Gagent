@@ -45,20 +45,23 @@ def _run_bash(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult
 
     timeout = int(args.get("timeout", 120))
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=context.cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
-        )
+        if context.sandbox_runner is not None:
+            result = context.sandbox_runner.run(command, cwd=context.cwd, timeout=timeout)
+        else:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=context.cwd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                check=False,
+            )
     except subprocess.TimeoutExpired:
         return ToolResult(content=f"error: timeout after {timeout}s", is_error=True)
-    except OSError as exc:
+    except (OSError, RuntimeError) as exc:
         return ToolResult(content=f"error: {exc}", is_error=True)
 
     stdout = result.stdout.strip()
@@ -79,6 +82,9 @@ def _run_bash(args: dict[str, Any], context: ToolExecutionContext) -> ToolResult
             "exit_code": result.returncode,
             "stdout_chars": len(result.stdout),
             "stderr_chars": len(result.stderr),
+            "sandbox_mode": getattr(
+                getattr(context.sandbox_runner, "config", None), "mode", "off"
+            ),
         },
     )
 

@@ -7,13 +7,18 @@ from typing import Any
 from uuid import uuid4
 
 from gagent.core.engine import AgentRunResult, Engine, TextSink
+from gagent.core.hooks import HookContext, HookManager, HookPoint, HookResult
 from gagent.core.messages import system_message
+from gagent.core.permissions import ApprovalPolicy, PermissionChecker
 from gagent.core.prompt import build_system_prompt
 from gagent.core.run_store import RunStore
+from gagent.core.runtime_consumers import RuntimeConsumer, default_runtime_consumers
 from gagent.core.runtime_events import build_runtime_event
 from gagent.core.session_events import SessionEventBus
 from gagent.core.task_state import TaskState
+from gagent.core.tool_policy import ToolPolicyChecker
 from gagent.core.workspace import WorkspaceContext
+from gagent.features.sandbox import SandboxBackend, SandboxConfig, SandboxMode, SandboxRunner
 from gagent.providers.base import Provider
 from gagent.providers.types import ToolCall
 from gagent.tools.base import ToolExecutionContext
@@ -37,6 +42,10 @@ class AgentConfig:
     max_steps: int = 20
     stream: bool = True
     tool_profile: str = "default"
+    approval_policy: ApprovalPolicy = "auto"
+    sandbox_mode: SandboxMode = "off"
+    sandbox_backend: SandboxBackend = "auto"
+    sandbox_workspace_write: bool = True
 
 
 class GagentRuntime:
@@ -49,13 +58,15 @@ class GagentRuntime:
         config: AgentConfig,
         tools: ToolRegistry | None = None,
         messages: list[dict] | None = None,
+        runtime_consumers: list[RuntimeConsumer] | None = None,
     ) -> None:
         self.provider = provider
         self.config = config
         self.tools = tools or build_builtin_registry()
         self.tool_profile = resolve_tool_profile(self.tools, config.tool_profile)
         self.workspace = WorkspaceContext.build(config.cwd)
-        self.tool_context = ToolExecutionContext(cwd=config.cwd, workspace=self.workspace)
+        self.permission_checker = PermissionChecker(approval_policy=config.approval_policy)
+        self.tool_policy_checker = ToolPolicyChecker()
         self.system_prompt = build_system_prompt(
             workspace=self.workspace,
             tools=self.tools,
@@ -74,7 +85,23 @@ class GagentRuntime:
         self.current_turn_id = ""
         self.current_run_id = ""
         self._trace_seq = 0
-        self.session_event_bus.emit(
+        self.runtime_consumers = runtime_consumers or default_runtime_consumers()
+        self.hooks = HookManager()
+        self._register_default_hooks()
+        self.sandbox_runner = SandboxRunner(
+            SandboxConfig(
+                mode=config.sandbox_mode,
+                backend=config.sandbox_backend,
+                workspace_write=config.sandbox_workspace_write,
+            ),
+            emit_event=self._emit_sandbox_event,
+        )
+        self.tool_context = ToolExecutionContext(
+            cwd=config.cwd,
+            workspace=self.workspace,
+            sandbox_runner=self.sandbox_runner,
+        )
+        self.emit_event(
             "session_started",
             {
                 "workspace_root": str(self.workspace.repo_root),
@@ -91,20 +118,67 @@ class GagentRuntime:
     def tool_schemas(self) -> list[dict]:
         return self.tools.schemas_for_profile(self.tool_profile)
 
+    def run_hooks(self, point: HookPoint, payload: dict[str, Any] | None = None) -> HookResult:
+        return self.hooks.run(
+            point,
+            HookContext(runtime=self, point=point, payload=dict(payload or {})),
+        )
+
     def run_tool(self, tool_call: ToolCall) -> dict:
+        tool = self.tools.get(tool_call.name)
+        if tool is None:
+            return self._tool_result(
+                tool_call,
+                content=f"error: unknown tool '{tool_call.name}'",
+                is_error=True,
+                metadata={"tool_error_code": "unknown_tool"},
+            )
+        before_result = self.hooks.run(
+            "before_tool",
+            HookContext(
+                runtime=self,
+                point="before_tool",
+                payload={"tool": tool, "tool_call": tool_call, "args": tool_call.arguments},
+            ),
+        )
+        if not before_result.allowed:
+            return self._tool_result(
+                tool_call,
+                content=before_result.message,
+                is_error=True,
+                metadata={
+                    "tool_error_code": before_result.metadata.get(
+                        "tool_error_code", before_result.reason
+                    ),
+                    **before_result.metadata,
+                },
+            )
+
         result = self.tools.execute(
             tool_call.name,
             tool_call.arguments,
             self.tool_context,
             self.tool_profile,
         )
-        return {
-            "id": tool_call.id,
-            "name": tool_call.name,
-            "is_error": result.is_error,
-            "content": result.content,
-            "metadata": result.metadata or {},
-        }
+        self.hooks.run(
+            "after_tool",
+            HookContext(
+                runtime=self,
+                point="after_tool",
+                payload={
+                    "tool": tool,
+                    "tool_call": tool_call,
+                    "args": tool_call.arguments,
+                    "result": result,
+                },
+            ),
+        )
+        return self._tool_result(
+            tool_call,
+            content=result.content,
+            is_error=result.is_error,
+            metadata=result.metadata or {},
+        )
 
     def start_task(self, user_message: str) -> TaskState:
         task_state = TaskState.create(user_message)
@@ -112,11 +186,11 @@ class GagentRuntime:
         self.current_turn_id = task_state.turn_id
         self.current_run_id = task_state.run_id
         self.current_run_dir = self.run_store.start_run(task_state)
-        self.session_event_bus.emit(
+        self.emit_event(
             "turn_started",
             {"run_id": task_state.run_id, "turn_id": task_state.turn_id},
         )
-        self.session_event_bus.emit(
+        self.emit_event(
             "user_message",
             {
                 "run_id": task_state.run_id,
@@ -124,8 +198,7 @@ class GagentRuntime:
                 "content": _clip(user_message, 500),
             },
         )
-        self.emit_trace(
-            task_state,
+        self.emit_event(
             "run_started",
             {
                 "user_request": _clip(user_message, 500),
@@ -134,6 +207,27 @@ class GagentRuntime:
             },
         )
         return task_state
+
+    def emit_event(self, event: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Emit one runtime event to session timeline, run trace, and consumers."""
+
+        enriched = {
+            "run_id": self.current_run_id,
+            "turn_id": self.current_turn_id,
+            **dict(payload or {}),
+        }
+        session_record = self.session_event_bus.emit(event, enriched)
+        if self.current_task_state is None:
+            return session_record
+
+        self._trace_seq += 1
+        trace_record = build_runtime_event(self.current_task_state, event, enriched)
+        trace_record.setdefault("span_id", f"span_{self._trace_seq:06d}")
+        self.run_store.append_trace(self.current_task_state, trace_record)
+        for consumer in self.runtime_consumers:
+            consumer.handle(self, self.current_task_state, trace_record)
+        self.run_store.write_task_state(self.current_task_state)
+        return trace_record
 
     def emit_trace(
         self,
@@ -169,6 +263,124 @@ class GagentRuntime:
         self.current_run_dir = None
         self.current_turn_id = ""
         self.current_run_id = ""
+
+    def _register_default_hooks(self) -> None:
+        self.hooks.register(
+            "before_tool",
+            self._tool_policy_hook,
+            name="tool_policy",
+            mandatory=True,
+        )
+        self.hooks.register(
+            "before_tool",
+            self._permission_hook,
+            name="permission",
+            mandatory=True,
+        )
+        self.hooks.register(
+            "after_tool",
+            self._tool_policy_state_hook,
+            name="tool_policy_state",
+            mandatory=True,
+        )
+
+    def _tool_policy_hook(self, context: HookContext) -> HookResult:
+        tool = context.payload["tool"]
+        args = context.payload["args"]
+        decision = self.tool_policy_checker.check(tool, args, self.tool_context)
+        self.emit_event(
+            "tool_policy_decision",
+            {
+                "tool_name": tool.name,
+                "decision": decision.decision,
+                "reason": decision.reason,
+                "message": decision.message,
+            },
+        )
+        if decision.allowed:
+            return HookResult.allow(decision.reason)
+        return HookResult.deny(
+            decision.reason,
+            message=decision.message,
+            metadata={"tool_error_code": decision.reason},
+        )
+
+    def _permission_hook(self, context: HookContext) -> HookResult:
+        tool = context.payload["tool"]
+        args = context.payload["args"]
+        decision = self.permission_checker.check(
+            tool,
+            args,
+            self.tool_context,
+            self.tool_profile,
+        )
+        self.emit_event(
+            "permission_decision",
+            {
+                "tool_name": tool.name,
+                "decision": decision.decision,
+                "reason": decision.reason,
+                "security_event_type": decision.security_event_type,
+                "message": decision.message,
+            },
+        )
+        if decision.allowed:
+            return HookResult.allow(decision.reason)
+        return HookResult.deny(
+            decision.reason,
+            message=decision.message or f"error: permission denied for {tool.name}",
+            metadata={"tool_error_code": decision.reason},
+        )
+
+    def _tool_policy_state_hook(self, context: HookContext) -> HookResult:
+        tool = context.payload["tool"]
+        args = context.payload["args"]
+        result = context.payload["result"]
+        self.tool_policy_checker.record_result(
+            tool,
+            args,
+            self.tool_context,
+            is_error=result.is_error,
+        )
+        return HookResult.allow("tool_policy_state_recorded")
+
+    def _tool_result(
+        self,
+        tool_call: ToolCall,
+        *,
+        content: str,
+        is_error: bool,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict:
+        return {
+            "id": tool_call.id,
+            "name": tool_call.name,
+            "is_error": is_error,
+            "content": content,
+            "metadata": metadata or {},
+        }
+
+    def _emit_decision_event(
+        self,
+        event: str,
+        tool_name: str,
+        decision: str,
+        reason: str,
+        *,
+        security_event_type: str = "",
+    ) -> None:
+        payload = {
+            "run_id": self.current_run_id,
+            "turn_id": self.current_turn_id,
+            "tool_name": tool_name,
+            "decision": decision,
+            "reason": reason,
+            "security_event_type": security_event_type,
+        }
+        self.emit_event(event, payload)
+
+    def _emit_sandbox_event(self, event: str, payload: dict) -> None:
+        self.emit_event(event, payload)
 
 
 def _new_session_id() -> str:

@@ -21,7 +21,7 @@ def test_system_prompt_includes_workspace_and_tool_guidance(tmp_path: Path):
     assert "You are Gagent" in prompt.text
     assert "Tool profile: readonly" in prompt.text
     assert "`grep`" in prompt.text
-    assert "`bash`" not in prompt.text
+    assert "- `bash`" not in prompt.text
     assert "repo_root:" in prompt.text
     assert "### README.md" in prompt.text
     assert prompt.workspace_fingerprint == workspace.fingerprint()
@@ -39,5 +39,5 @@ def test_tool_signature_changes_with_profile(tmp_path: Path):
     default_prompt = build_system_prompt(workspace=workspace, tools=tools, profile=default)
 
     assert readonly_prompt.tool_signature != default_prompt.tool_signature
-    assert "`bash`" not in readonly_prompt.text
-    assert "`bash`" in default_prompt.text
+    assert "- `bash`" not in readonly_prompt.text
+    assert "- `bash`" in default_prompt.text

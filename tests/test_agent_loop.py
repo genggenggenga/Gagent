@@ -132,14 +132,18 @@ def test_engine_persists_session_events_and_run_artifacts(tmp_path: Path):
         "session_started",
         "turn_started",
         "user_message",
+        "run_started",
         "model_requested",
         "model_completed",
         "tool_started",
+        "tool_policy_decision",
+        "permission_decision",
         "tool_finished",
         "model_requested",
         "model_completed",
         "assistant_message",
         "turn_finished",
+        "run_finished",
     ]
 
     trace_events = [

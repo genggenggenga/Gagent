@@ -16,6 +16,10 @@ def test_cli_parser_accepts_first_stage_runtime_options():
             "openai/gpt-4o-mini",
             "--tool-profile",
             "readonly",
+            "--approval-policy",
+            "never",
+            "--sandbox",
+            "best_effort",
             "--max-steps",
             "3",
             "hello",
@@ -25,6 +29,8 @@ def test_cli_parser_accepts_first_stage_runtime_options():
     assert args.cwd == "."
     assert args.model == "openai/gpt-4o-mini"
     assert args.tool_profile == "readonly"
+    assert args.approval_policy == "never"
+    assert args.sandbox == "best_effort"
     assert args.max_steps == 3
     assert args.prompt == ["hello"]
 

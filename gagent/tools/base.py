@@ -19,6 +19,7 @@ class ToolExecutionContext:
 
     cwd: Path
     workspace: WorkspaceContext | None = None
+    sandbox_runner: Any = None
 
     def resolve_path(self, raw_path: str) -> Path:
         if self.workspace is not None:

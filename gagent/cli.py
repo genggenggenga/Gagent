@@ -30,6 +30,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default="default",
         help="Tool capability profile exposed to the model.",
     )
+    parser.add_argument(
+        "--approval-policy",
+        choices=("auto", "never"),
+        default="auto",
+        help="Permission policy for mutating or executing tools.",
+    )
+    parser.add_argument(
+        "--sandbox",
+        choices=("off", "best_effort", "required"),
+        default="off",
+        help="Shell sandbox mode for bash tool execution.",
+    )
+    parser.add_argument(
+        "--sandbox-backend",
+        choices=("auto", "bubblewrap", "none"),
+        default="auto",
+        help="Sandbox backend for shell execution.",
+    )
     parser.add_argument("--list-tools", action="store_true", help="List enabled tools and exit.")
     parser.add_argument("--no-stream", action="store_true", help="Disable provider streaming.")
     return parser

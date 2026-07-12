@@ -32,7 +32,11 @@ def _write_file(args: dict[str, Any], context: ToolExecutionContext) -> ToolResu
     content = str(args.get("content", ""))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    return ToolResult(content=f"wrote {len(content.encode('utf-8'))} bytes to {raw_path}")
+    byte_count = len(content.encode("utf-8"))
+    return ToolResult(
+        content=f"wrote {byte_count} bytes to {raw_path}",
+        metadata={"path": raw_path, "bytes": byte_count},
+    )
 
 
 def resolve_workspace_path(context: ToolExecutionContext, raw_path: str):

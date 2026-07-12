@@ -61,6 +61,7 @@ class Engine:
         runtime = self.runtime
         turn_started_at = time.monotonic()
         task_state = runtime.start_task(user_message)
+        runtime.run_hooks("before_turn", {"user_message": user_message})
         yield {
             "type": "turn_started",
             "run_id": task_state.run_id,
@@ -74,15 +75,11 @@ class Engine:
         for step in range(1, runtime.config.max_steps + 1):
             task_state.record_attempt()
             runtime.run_store.write_task_state(task_state)
-            runtime.session_event_bus.emit(
-                "model_requested",
-                {"run_id": task_state.run_id, "turn_id": task_state.turn_id, "step": step},
-            )
-            runtime.emit_trace(
-                task_state,
+            runtime.emit_event(
                 "model_requested",
                 {"step": step, "message_count": len(runtime.messages)},
             )
+            runtime.run_hooks("before_model", {"step": step})
             yield {
                 "type": "model_requested",
                 "run_id": task_state.run_id,
@@ -99,25 +96,22 @@ class Engine:
             model_duration_ms = int((time.monotonic() - model_started_at) * 1000)
             usage = completion.usage or usage
             final_text = completion.text
-            runtime.session_event_bus.emit(
+            runtime.emit_event(
                 "model_completed",
                 {
-                    "run_id": task_state.run_id,
-                    "turn_id": task_state.turn_id,
                     "step": step,
                     "stop_reason": completion.stop_reason,
                     "duration_ms": model_duration_ms,
+                    "raw_stop_reason": completion.raw_stop_reason,
+                    "output_chars": len(completion.text),
+                    "tool_call_count": len(completion.tool_calls),
                 },
             )
-            runtime.emit_trace(
-                task_state,
-                "model_completed",
+            runtime.run_hooks(
+                "after_model",
                 {
                     "step": step,
                     "stop_reason": completion.stop_reason,
-                    "raw_stop_reason": completion.raw_stop_reason,
-                    "duration_ms": model_duration_ms,
-                    "output_chars": len(completion.text),
                     "tool_call_count": len(completion.tool_calls),
                 },
             )
@@ -136,6 +130,7 @@ class Engine:
                 continue
 
             if completion.stop_reason in {"stop", "unknown"}:
+                runtime.run_hooks("before_final", {"step": step, "stop_reason": completion.stop_reason})
                 result = self._finish(step, completion, usage, tool_results, task_state)
                 self._record_turn_finished(task_state, result, turn_started_at)
                 yield {
@@ -194,20 +189,13 @@ class Engine:
         for tool_call in completion.tool_calls:
             task_state.record_tool(tool_call.name)
             runtime.run_store.write_task_state(task_state)
-            runtime.session_event_bus.emit(
+            runtime.emit_event(
                 "tool_started",
                 {
-                    "run_id": task_state.run_id,
-                    "turn_id": task_state.turn_id,
                     "step": step,
                     "tool_name": tool_call.name,
                     "args": tool_call.arguments,
                 },
-            )
-            runtime.emit_trace(
-                task_state,
-                "tool_started",
-                {"step": step, "tool_name": tool_call.name, "args": tool_call.arguments},
             )
             yield {
                 "type": "tool_started",
@@ -221,19 +209,7 @@ class Engine:
             duration_ms = int((time.monotonic() - tool_started_at) * 1000)
             tool_results.append(tool_result)
             runtime.messages.append(tool_message(tool_call.id, tool_result["content"]))
-            runtime.session_event_bus.emit(
-                "tool_finished",
-                {
-                    "run_id": task_state.run_id,
-                    "turn_id": task_state.turn_id,
-                    "step": step,
-                    "tool_name": tool_call.name,
-                    "is_error": tool_result["is_error"],
-                    "duration_ms": duration_ms,
-                },
-            )
-            runtime.emit_trace(
-                task_state,
+            runtime.emit_event(
                 "tool_finished",
                 {
                     "step": step,
@@ -241,6 +217,7 @@ class Engine:
                     "is_error": tool_result["is_error"],
                     "duration_ms": duration_ms,
                     "output_chars": len(tool_result["content"]),
+                    "metadata": tool_result.get("metadata", {}),
                 },
             )
             yield {
@@ -312,27 +289,22 @@ class Engine:
     ) -> None:
         runtime = self.runtime
         duration_ms = int((time.monotonic() - turn_started_at) * 1000)
-        runtime.session_event_bus.emit(
+        runtime.emit_event(
             "assistant_message",
             {
-                "run_id": task_state.run_id,
-                "turn_id": task_state.turn_id,
                 "content": _clip(result.final_text, 500),
                 "stop_reason": result.stop_reason,
             },
         )
-        runtime.session_event_bus.emit(
+        runtime.emit_event(
             "turn_finished",
             {
-                "run_id": task_state.run_id,
-                "turn_id": task_state.turn_id,
                 "status": task_state.status,
                 "stop_reason": task_state.stop_reason,
                 "duration_ms": duration_ms,
             },
         )
-        runtime.emit_trace(
-            task_state,
+        runtime.emit_event(
             "run_finished",
             {
                 "run_status": task_state.status,

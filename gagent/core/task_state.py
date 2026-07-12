@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -28,6 +28,9 @@ class TaskState:
     final_text: str = ""
     started_at: str = ""
     finished_at: str = ""
+    changed_paths: list[str] = field(default_factory=list)
+    runtime_reminders: list[dict[str, object]] = field(default_factory=list)
+    tool_stats: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @classmethod
     def create(cls, user_request: str) -> "TaskState":
@@ -66,4 +69,7 @@ class TaskState:
             "final_text": self.final_text,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "changed_paths": list(self.changed_paths),
+            "runtime_reminders": list(self.runtime_reminders),
+            "tool_stats": dict(self.tool_stats),
         }
