@@ -10,6 +10,7 @@ from gagent.tools.builtin.grep import grep_tool
 from gagent.tools.builtin.glob import glob_tool
 from gagent.tools.builtin.list_dir import list_dir_tool
 from gagent.tools.builtin.read_file import read_file_tool
+from gagent.tools.builtin.todo_write import todo_write_tool
 from gagent.tools.builtin.write_file import write_file_tool
 
 
@@ -67,6 +68,7 @@ def build_builtin_registry() -> ToolRegistry:
             list_dir_tool(),
             glob_tool(),
             grep_tool(),
+            todo_write_tool(),
             read_file_tool(),
             edit_file_tool(),
             write_file_tool(),

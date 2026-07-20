@@ -452,6 +452,7 @@ ToolResult(
 | `list_dir` | `read` | `low` | `path` 默认 `.`；`limit` 默认 `200` | 目录项列表，目录以 `/` 结尾 |
 | `glob` | `read` | `low` | `pattern` 必填；`limit` 默认 `200` | workspace-relative 文件路径列表 |
 | `grep` | `read` | `low` | `pattern` 必填；`path` 默认 `.`；`include` 可选；`literal` 默认 `false`；`limit` 默认 `100` | `path:line:content` 命中行 |
+| `todo_write` | `read` | `low` | `todos` 必填，元素包含 `content` 和 `status` | 当前任务进度列表，metadata 记录 todos 和 counts |
 | `read_file` | `read` | `low` | `path` 必填；`start` 默认 `1`；`end` 默认 `200` | 带行号的文本片段 |
 | `edit_file` | `write` | `medium` | `path`、`old_text`、`new_text` 必填 | 替换结果和 byte delta，metadata 记录 path |
 | `write_file` | `write` | `medium` | `path`、`content` 必填 | 写入 byte 数，metadata 记录 path |
@@ -462,6 +463,7 @@ ToolResult(
 - `glob.pattern` 不允许绝对路径或 `..` 越界。
 - `grep` 优先使用 `rg -n --smart-case`，无 `rg` 时 fallback 到 Python 搜索。
 - `grep.literal=true` 时使用字面量搜索；默认按 regex 搜索。
+- `todo_write` 只更新运行内任务进度，不修改 workspace 文件，最多允许一个 `in_progress`。
 - `read_file` 使用 1-based 行号，`end` 为闭区间。
 - `edit_file` 要求 `old_text` 在文件中恰好出现一次。
 - `bash` 会先拦截明显危险命令片段，例如 `sudo `、`rm -rf /`、`shutdown`。
@@ -471,6 +473,8 @@ ToolResult(
 - `list_dir`：列目录。
 - `glob`：按 glob 查找文件。
 - `grep`：搜索文件内容，默认 regex，支持 literal 和 include。
+- `todo_write`：更新当前任务进度列表。
+- `read_file`：按行读取文件。
 - `read_file`：按行读取文件。
 - `edit_file`：唯一文本片段替换。
 - `write_file`：写文件。

@@ -19,6 +19,7 @@ Engine
       -> SessionEventBus
       -> RunStore trace
       -> RuntimeConsumers
+          -> reminders / stats / changed paths / todos
 
 Runtime.run_tool()
   -> before_tool hooks
@@ -289,6 +290,21 @@ task_state.changed_paths
 ```
 
 后续可用于 verification suggestion、最终总结和 session resume。
+
+### TodoStateConsumer
+
+监听成功的：
+
+- `todo_write`
+
+维护：
+
+```python
+task_state.todos
+task_state.todo_changes
+```
+
+这让 todo 不只是工具输出文本，也会进入 `task_state.json` 和 `report.json`。
 
 ## Engine 瘦身
 

@@ -12,6 +12,7 @@
 | Harness 2：Workspace 上下文 + System Prompt | 2026-07-12 | [02-workspace-system-prompt.md](implementation-logs/02-workspace-system-prompt.md) |
 | Harness 3：Permission / Sandbox | 2026-07-13 | [03-permission-sandbox.md](implementation-logs/03-permission-sandbox.md) |
 | Harness 4：Hooks / Runtime Events | 2026-07-13 | [04-hooks-runtime-events.md](implementation-logs/04-hooks-runtime-events.md) |
+| Harness 5：TodoWrite / Task Progress State | 2026-07-21 | [05-todowrite-task-progress.md](implementation-logs/05-todowrite-task-progress.md) |
 
 ## 新增记录约定
 

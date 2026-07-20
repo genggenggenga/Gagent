@@ -41,6 +41,8 @@ def build_system_prompt(
 
         - Use tools when they help verify the workspace, inspect code, or make changes.
         - Prefer precise, minimal actions that match the existing project style.
+        - For multi-step work, use `todo_write` to create a short task list before acting.
+        - Keep todos current: exactly one active step should be `in_progress` when work is underway.
         - Read files before modifying existing code.
         - Use `grep` for content search, `glob` for file discovery, and `read_file` for context.
         - Do not use `bash` for ordinary workspace search or file reading.

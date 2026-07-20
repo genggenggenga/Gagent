@@ -60,6 +60,46 @@ class LengthStopProvider:
         )
 
 
+class TodoProvider:
+    model = "fake-model"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def complete(
+        self,
+        messages: list[Message],
+        tools: list[ToolSchema] | None = None,
+        *,
+        stream: bool = True,
+        on_text: TextSink | None = None,
+    ) -> ChatCompletionResult:
+        del stream, on_text
+        self.calls += 1
+        if self.calls == 1:
+            assert tools
+            assert any(tool["function"]["name"] == "todo_write" for tool in tools)
+            return ChatCompletionResult(
+                stop_reason="tool_calls",
+                tool_calls=(
+                    ToolCall(
+                        id="call_1",
+                        name="todo_write",
+                        arguments={
+                            "todos": [
+                                {"content": "Inspect design", "status": "completed"},
+                                {"content": "Implement todo state", "status": "in_progress"},
+                            ]
+                        },
+                    ),
+                ),
+            )
+
+        assert messages[-1]["role"] == "tool"
+        assert "Current todos:" in messages[-1]["content"]
+        return ChatCompletionResult(text="Todos tracked.", stop_reason="stop")
+
+
 def test_agent_loop_executes_tool_calls(tmp_path: Path):
     (tmp_path / "README.md").write_text("# Gagent\n", encoding="utf-8")
     provider = FakeProvider()
@@ -169,3 +209,38 @@ def test_engine_stops_on_length_finish_reason(tmp_path: Path):
     assert result.final_text == "partial answer"
     assert result.hit_step_limit
     assert result.stop_reason == "length"
+
+
+def test_todo_write_updates_task_state_and_report(tmp_path: Path):
+    provider = TodoProvider()
+    runtime = GagentRuntime(
+        provider=provider,
+        config=AgentConfig(cwd=tmp_path, model=provider.model, stream=False),
+    )
+
+    result = runtime.ask("track a multi-step task")
+    run_dir = tmp_path / ".gagent" / "runs" / result.run_id
+
+    task_state = json.loads((run_dir / "task_state.json").read_text(encoding="utf-8"))
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    trace_events = [
+        json.loads(line)
+        for line in (run_dir / "trace.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert result.final_text == "Todos tracked."
+    assert task_state["todos"] == [
+        {"content": "Inspect design", "status": "completed"},
+        {"content": "Implement todo state", "status": "in_progress"},
+    ]
+    assert report["todos"] == task_state["todos"]
+    assert task_state["todo_changes"][0]["counts"] == {
+        "completed": 1,
+        "in_progress": 1,
+        "pending": 0,
+    }
+    assert any(
+        event["event"] == "tool_finished" and event["tool_name"] == "todo_write"
+        for event in trace_events
+    )

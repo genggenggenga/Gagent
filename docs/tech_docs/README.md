@@ -10,6 +10,7 @@
 | Harness 2：Workspace 上下文 + System Prompt | [02-workspace-system-prompt.md](02-workspace-system-prompt.md) |
 | Harness 3：Permission / Sandbox | [03-permission-sandbox.md](03-permission-sandbox.md) |
 | Harness 4：Hooks / Runtime Events | [04-hooks-runtime-events.md](04-hooks-runtime-events.md) |
+| Harness 5：TodoWrite / Task Progress State | [05-todowrite-task-progress.md](05-todowrite-task-progress.md) |
 
 ## 维护约定
 

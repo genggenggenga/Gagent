@@ -66,5 +66,34 @@ class ChangedPathConsumer:
             task_state.changed_paths.append(path)
 
 
+class TodoStateConsumer:
+    """Keep the current todo list in task state."""
+
+    def handle(self, runtime: Any, task_state: TaskState, event: dict[str, Any]) -> None:
+        if event.get("event") != "tool_finished" or event.get("is_error"):
+            return
+        if event.get("tool_name") != "todo_write":
+            return
+        metadata = event.get("metadata") or {}
+        todos = metadata.get("todos")
+        if not isinstance(todos, list):
+            return
+        normalized = [dict(todo) for todo in todos if isinstance(todo, dict)]
+        task_state.todos = normalized
+        task_state.todo_changes.append(
+            {
+                "action": "write",
+                "todos": normalized,
+                "counts": dict(metadata.get("todo_counts") or {}),
+                "created_at": event.get("created_at", ""),
+            }
+        )
+
+
 def default_runtime_consumers() -> list[RuntimeConsumer]:
-    return [DecisionReminderConsumer(), ToolStatsConsumer(), ChangedPathConsumer()]
+    return [
+        DecisionReminderConsumer(),
+        ToolStatsConsumer(),
+        ChangedPathConsumer(),
+        TodoStateConsumer(),
+    ]

@@ -21,6 +21,8 @@ def test_system_prompt_includes_workspace_and_tool_guidance(tmp_path: Path):
     assert "You are Gagent" in prompt.text
     assert "Tool profile: readonly" in prompt.text
     assert "`grep`" in prompt.text
+    assert "`todo_write`" in prompt.text
+    assert "For multi-step work, use `todo_write`" in prompt.text
     assert "- `bash`" not in prompt.text
     assert "repo_root:" in prompt.text
     assert "### README.md" in prompt.text

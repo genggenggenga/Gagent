@@ -17,6 +17,7 @@ def test_tool_profiles_filter_capabilities():
         "glob",
         "list_dir",
         "read_file",
+        "todo_write",
     }
     assert "bash" not in {tool.name for tool in registry.tools_for_profile(no_shell)}
     assert "edit_file" in {tool.name for tool in registry.tools_for_profile(no_shell)}
@@ -188,3 +189,52 @@ def test_bash_result_includes_exit_code_stdout_and_stderr(tmp_path: Path):
     assert "stdout:\nhello" in result.content
     assert "stderr:\nerror" in result.content
     assert result.metadata["exit_code"] == 0
+
+
+def test_todo_write_updates_progress_list(tmp_path: Path):
+    registry = build_builtin_registry()
+    profile = resolve_tool_profile(registry, "readonly")
+    context = ToolExecutionContext(cwd=tmp_path)
+
+    result = registry.execute(
+        "todo_write",
+        {
+            "todos": [
+                {"content": "Read current code", "status": "completed"},
+                {"content": "Implement todo tool", "status": "in_progress"},
+                {"content": "Run tests", "status": "pending"},
+            ]
+        },
+        context,
+        profile,
+    )
+
+    assert not result.is_error
+    assert "1. [x] Read current code" in result.content
+    assert "2. [>] Implement todo tool" in result.content
+    assert result.metadata["todo_counts"] == {
+        "completed": 1,
+        "in_progress": 1,
+        "pending": 1,
+    }
+
+
+def test_todo_write_rejects_multiple_in_progress_items(tmp_path: Path):
+    registry = build_builtin_registry()
+    profile = resolve_tool_profile(registry, "readonly")
+    context = ToolExecutionContext(cwd=tmp_path)
+
+    result = registry.execute(
+        "todo_write",
+        {
+            "todos": [
+                {"content": "One", "status": "in_progress"},
+                {"content": "Two", "status": "in_progress"},
+            ]
+        },
+        context,
+        profile,
+    )
+
+    assert result.is_error
+    assert "only one todo can be in_progress" in result.content

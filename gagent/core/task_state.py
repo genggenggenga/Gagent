@@ -31,6 +31,8 @@ class TaskState:
     changed_paths: list[str] = field(default_factory=list)
     runtime_reminders: list[dict[str, object]] = field(default_factory=list)
     tool_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+    todos: list[dict[str, str]] = field(default_factory=list)
+    todo_changes: list[dict[str, object]] = field(default_factory=list)
 
     @classmethod
     def create(cls, user_request: str) -> "TaskState":
@@ -72,4 +74,6 @@ class TaskState:
             "changed_paths": list(self.changed_paths),
             "runtime_reminders": list(self.runtime_reminders),
             "tool_stats": dict(self.tool_stats),
+            "todos": list(self.todos),
+            "todo_changes": list(self.todo_changes),
         }
