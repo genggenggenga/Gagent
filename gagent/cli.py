@@ -1,12 +1,14 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from gagent import __version__
 from gagent.core.engine import AgentRunResult
 from gagent.config import resolve_runtime_config
 from gagent.core.runtime import GagentRuntime
+from gagent.core.session_store import SessionStore
 from gagent.providers import LiteLLMProvider
 from gagent.tools.registry import build_tool_profiles
 
@@ -49,6 +51,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Sandbox backend for shell execution.",
     )
     parser.add_argument("--list-tools", action="store_true", help="List enabled tools and exit.")
+    parser.add_argument(
+        "--resume",
+        default=None,
+        metavar="SESSION",
+        help="Resume a previous session by id, or use 'latest'.",
+    )
+    parser.add_argument(
+        "--list-sessions",
+        action="store_true",
+        help="List persisted sessions and exit.",
+    )
     parser.add_argument("--no-stream", action="store_true", help="Disable provider streaming.")
     return parser
 
@@ -62,7 +75,12 @@ def build_runtime(args: argparse.Namespace) -> GagentRuntime:
         temperature=config.temperature,
         timeout=config.timeout,
     )
-    return GagentRuntime(provider=provider, config=config)
+    return GagentRuntime(
+        provider=provider,
+        config=config,
+        session_id=None if args.resume in {None, "latest"} else args.resume,
+        resume_latest=args.resume == "latest",
+    )
 
 
 def run_agent_turn(agent: GagentRuntime, prompt: str) -> AgentRunResult:
@@ -122,6 +140,26 @@ def _tool_prefix() -> str:
     return label
 
 
+def print_sessions(cwd: str) -> None:
+    store = SessionStore(Path(cwd).expanduser().resolve() / ".gagent" / "sessions")
+    rows = store.list_sessions()
+    if not rows:
+        print("No sessions found.")
+        return
+    for row in rows:
+        print(
+            "\t".join(
+                [
+                    row["id"],
+                    row["updated_at"],
+                    f"messages={row['message_count']}",
+                    f"runs={row['run_count']}",
+                    row["last_user_message"],
+                ]
+            )
+        )
+
+
 def welcome_banner(*, color: bool | None = None) -> str:
     """Return the interactive welcome banner."""
 
@@ -139,6 +177,11 @@ def welcome_banner(*, color: bool | None = None) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+
+    if args.list_sessions:
+        print_sessions(args.cwd)
+        return 0
+
     agent = build_runtime(args)
 
     if args.list_tools:

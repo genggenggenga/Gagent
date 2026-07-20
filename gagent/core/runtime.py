@@ -14,7 +14,9 @@ from gagent.core.prompt import build_system_prompt
 from gagent.core.run_store import RunStore
 from gagent.core.runtime_consumers import RuntimeConsumer, default_runtime_consumers
 from gagent.core.runtime_events import build_runtime_event
+from gagent.core.session import SessionState
 from gagent.core.session_events import SessionEventBus
+from gagent.core.session_store import SessionStore
 from gagent.core.task_state import TaskState
 from gagent.core.tool_policy import ToolPolicyChecker
 from gagent.core.workspace import WorkspaceContext
@@ -59,6 +61,8 @@ class GagentRuntime:
         tools: ToolRegistry | None = None,
         messages: list[dict] | None = None,
         runtime_consumers: list[RuntimeConsumer] | None = None,
+        session_id: str | None = None,
+        resume_latest: bool = False,
     ) -> None:
         self.provider = provider
         self.config = config
@@ -72,13 +76,20 @@ class GagentRuntime:
             tools=self.tools,
             profile=self.tool_profile,
         )
-        self.messages = messages or [system_message(self.system_prompt.text)]
-        self.session_id = _new_session_id()
         self.session_dir = config.cwd / ".gagent" / "sessions"
+        self.session_store = SessionStore(self.session_dir)
+        self.resume_warnings: list[str] = []
+        self.session = self._load_or_create_session(
+            messages=messages,
+            session_id=session_id,
+            resume_latest=resume_latest,
+        )
+        self.messages = [dict(message) for message in self.session.messages]
+        self.session_id = self.session.id
         self.run_store = RunStore(config.cwd / ".gagent" / "runs")
         self.session_event_bus = SessionEventBus(
             session_id=self.session_id,
-            path=self.session_dir / f"{self.session_id}.events.jsonl",
+            path=self.session_store.event_path(self.session_id),
         )
         self.current_task_state: TaskState | None = None
         self.current_run_dir: Path | None = None
@@ -101,15 +112,28 @@ class GagentRuntime:
             workspace=self.workspace,
             sandbox_runner=self.sandbox_runner,
         )
-        self.emit_event(
-            "session_started",
-            {
-                "workspace_root": str(self.workspace.repo_root),
-                "cwd": str(self.workspace.cwd),
-                "model": config.model,
-                "system_prompt_hash": self.system_prompt.hash,
-            },
-        )
+        if session_id or resume_latest:
+            self.emit_event(
+                "session_resumed",
+                {
+                    "workspace_root": str(self.workspace.repo_root),
+                    "cwd": str(self.workspace.cwd),
+                    "model": config.model,
+                    "system_prompt_hash": self.system_prompt.hash,
+                    "warnings": list(self.resume_warnings),
+                },
+            )
+        else:
+            self.emit_event(
+                "session_started",
+                {
+                    "workspace_root": str(self.workspace.repo_root),
+                    "cwd": str(self.workspace.cwd),
+                    "model": config.model,
+                    "system_prompt_hash": self.system_prompt.hash,
+                },
+            )
+            self.save_session()
         self.engine = Engine(self)
 
     def ask(self, user_message: str, *, on_text: TextSink | None = None) -> AgentRunResult:
@@ -117,6 +141,19 @@ class GagentRuntime:
 
     def tool_schemas(self) -> list[dict]:
         return self.tools.schemas_for_profile(self.tool_profile)
+
+    def save_session(self, task_state: TaskState | None = None) -> Path:
+        """Persist the resumable conversation state."""
+
+        self.session.messages = [dict(message) for message in self.messages]
+        self.session.workspace = self._workspace_record()
+        self.session.model = self.config.model
+        self.session.system_prompt_hash = self.system_prompt.hash
+        if task_state is not None:
+            self.session.todos = [dict(todo) for todo in task_state.todos]
+            if task_state.run_id and task_state.run_id not in self.session.run_ids:
+                self.session.run_ids.append(task_state.run_id)
+        return self.session_store.save(self.session)
 
     def run_hooks(self, point: HookPoint, payload: dict[str, Any] | None = None) -> HookResult:
         return self.hooks.run(
@@ -182,6 +219,7 @@ class GagentRuntime:
 
     def start_task(self, user_message: str) -> TaskState:
         task_state = TaskState.create(user_message)
+        task_state.todos = [dict(todo) for todo in self.session.todos]
         self.current_task_state = task_state
         self.current_turn_id = task_state.turn_id
         self.current_run_id = task_state.run_id
@@ -256,7 +294,9 @@ class GagentRuntime:
             "usage": _usage_to_dict(usage),
             "tool_results": list(tool_results or []),
         }
-        return self.run_store.write_report(task_state, report)
+        path = self.run_store.write_report(task_state, report)
+        self.save_session(task_state)
+        return path
 
     def finish_task(self) -> None:
         self.current_task_state = None
@@ -381,6 +421,62 @@ class GagentRuntime:
 
     def _emit_sandbox_event(self, event: str, payload: dict) -> None:
         self.emit_event(event, payload)
+
+    def _load_or_create_session(
+        self,
+        *,
+        messages: list[dict] | None,
+        session_id: str | None,
+        resume_latest: bool,
+    ) -> SessionState:
+        if session_id or resume_latest:
+            resolved_session_id = session_id
+            if resume_latest:
+                resolved_session_id = self.session_store.latest()
+                if resolved_session_id is None:
+                    raise ValueError("no session available to resume")
+            session = self.session_store.load(str(resolved_session_id))
+            self._prepare_resumed_session(session)
+            return session
+
+        initial_messages = messages or [system_message(self.system_prompt.text)]
+        return SessionState.create(
+            session_id=_new_session_id(),
+            workspace=self._workspace_record(),
+            model=self.config.model,
+            system_prompt_hash=self.system_prompt.hash,
+            messages=initial_messages,
+        )
+
+    def _prepare_resumed_session(self, session: SessionState) -> None:
+        recorded_root = session.workspace.get("repo_root", "")
+        if recorded_root and recorded_root != str(self.workspace.repo_root):
+            self.resume_warnings.append(
+                f"workspace mismatch: session={recorded_root}, current={self.workspace.repo_root}"
+            )
+
+        system_prompt_changed = session.system_prompt_hash != self.system_prompt.hash
+        if system_prompt_changed:
+            self.resume_warnings.append("system prompt changed; refreshed the system message")
+            current_system = system_message(self.system_prompt.text)
+            if session.messages and session.messages[0].get("role") == "system":
+                session.messages[0] = current_system
+            else:
+                session.messages.insert(0, current_system)
+
+        if not session.messages:
+            session.messages = [system_message(self.system_prompt.text)]
+        session.workspace = self._workspace_record()
+        session.model = self.config.model
+        session.system_prompt_hash = self.system_prompt.hash
+        self.session_store.save(session)
+
+    def _workspace_record(self) -> dict[str, str]:
+        return {
+            "cwd": str(self.workspace.cwd),
+            "repo_root": str(self.workspace.repo_root),
+            "fingerprint": self.workspace.fingerprint(),
+        }
 
 
 def _new_session_id() -> str:
