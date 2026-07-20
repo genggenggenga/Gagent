@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from gagent import __version__
-from gagent.core.engine import AgentRunResult
+from gagent.commands.slash import command_help_text, resolve_command
 from gagent.config import resolve_runtime_config
+from gagent.core.engine import AgentRunResult
 from gagent.core.runtime import GagentRuntime
 from gagent.core.session_store import SessionStore
 from gagent.providers import LiteLLMProvider
@@ -160,6 +161,78 @@ def print_sessions(cwd: str) -> None:
         )
 
 
+def handle_repl_command(agent: GagentRuntime, user_input: str) -> tuple[bool, bool, str]:
+    """Handle slash commands before a prompt reaches the model."""
+
+    text = str(user_input or "").strip()
+    if not text.startswith("/"):
+        return False, False, ""
+
+    raw_command, _, command_args = text[1:].partition(" ")
+    resolved = resolve_command(raw_command)
+    if resolved is None:
+        return True, False, f"Unknown command: /{raw_command}. Use /help."
+
+    command_name = resolved.name
+    if command_name == "exit":
+        return True, True, ""
+    if command_name == "help":
+        return True, False, command_help_text()
+    if command_name == "status":
+        return True, False, format_status(agent)
+    if command_name == "tools":
+        return True, False, format_tools(agent)
+    if command_name == "clear":
+        if command_args.strip():
+            return True, False, "Usage: /clear"
+        session_id = agent.clear_session()
+        return True, False, f"new session {session_id}"
+    return True, False, f"Unknown command: /{raw_command}. Use /help."
+
+
+def format_status(agent: GagentRuntime) -> str:
+    last_run_id = agent.session.run_ids[-1] if agent.session.run_ids else ""
+    last_run_dir = str(agent.run_store.root / last_run_id) if last_run_id else "-"
+    todo_counts = _todo_counts(agent.session.todos)
+    return "\n".join(
+        [
+            f"session id: {agent.session_id}",
+            f"session path: {agent.session_store.path(agent.session_id)}",
+            f"events path: {agent.session_event_bus.path}",
+            f"cwd: {agent.workspace.cwd}",
+            f"repo root: {agent.workspace.repo_root}",
+            f"model: {agent.config.model}",
+            f"tool profile: {agent.tool_profile.name}",
+            f"messages: {len(agent.messages)}",
+            (
+                "todos: "
+                f"pending={todo_counts['pending']} "
+                f"in_progress={todo_counts['in_progress']} "
+                f"completed={todo_counts['completed']}"
+            ),
+            f"last run id: {last_run_id or '-'}",
+            f"last run dir: {last_run_dir}",
+        ]
+    )
+
+
+def format_tools(agent: GagentRuntime) -> str:
+    lines = []
+    for tool in agent.tools.tools_for_profile(agent.tool_profile):
+        marker = "read" if tool.read_only else tool.risk_level
+        lines.append(f"{tool.name}\t{marker}\t{tool.description}")
+    return "\n".join(lines)
+
+
+def _todo_counts(todos: list[dict[str, str]]) -> dict[str, int]:
+    counts = {"pending": 0, "in_progress": 0, "completed": 0}
+    for todo in todos:
+        status = str(todo.get("status", ""))
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
 def welcome_banner(*, color: bool | None = None) -> str:
     """Return the interactive welcome banner."""
 
@@ -194,6 +267,13 @@ def main(argv: list[str] | None = None) -> int:
 
     prompt = " ".join(args.prompt).strip()
     if prompt:
+        handled, should_exit, output = handle_repl_command(agent, prompt)
+        if should_exit:
+            return 0
+        if handled:
+            if output:
+                print(output)
+            return 0
         result = run_agent_turn(agent, prompt)
         if result.hit_step_limit:
             print(f"gagent: hit max steps ({result.steps})", file=sys.stderr)
@@ -207,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
     print(welcome_banner())
     print(f"gagent {__version__}")
     print(f"model: {agent.config.model} | cwd: {agent.config.cwd}")
-    print("输入问题后回车发送；输入 /exit 或 /quit 退出。\n")
+    print("输入问题后回车发送；输入 /help 查看命令；输入 /exit 或 /quit 退出。\n")
     while True:
         try:
             user_input = input("gagent> ").strip()
@@ -216,8 +296,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not user_input:
             continue
-        if user_input in {"/exit", "/quit"}:
+        handled, should_exit, output = handle_repl_command(agent, user_input)
+        if should_exit:
             return 0
+        if handled:
+            if output:
+                print(output)
+            continue
         result = run_agent_turn(agent, user_input)
         if result.hit_step_limit:
             print(f"gagent: hit max steps ({result.steps})", file=sys.stderr)

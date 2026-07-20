@@ -155,6 +155,41 @@ class GagentRuntime:
                 self.session.run_ids.append(task_state.run_id)
         return self.session_store.save(self.session)
 
+    def clear_session(self) -> str:
+        """Create a new empty session while keeping runtime configuration."""
+
+        self.session = SessionState.create(
+            session_id=_new_session_id(),
+            workspace=self._workspace_record(),
+            model=self.config.model,
+            system_prompt_hash=self.system_prompt.hash,
+            messages=[system_message(self.system_prompt.text)],
+        )
+        self.messages = [dict(message) for message in self.session.messages]
+        self.session_id = self.session.id
+        self.session_event_bus = SessionEventBus(
+            session_id=self.session_id,
+            path=self.session_store.event_path(self.session_id),
+        )
+        self.current_task_state = None
+        self.current_run_dir = None
+        self.current_turn_id = ""
+        self.current_run_id = ""
+        self._trace_seq = 0
+        self.tool_policy_checker = ToolPolicyChecker()
+        self.emit_event(
+            "session_started",
+            {
+                "workspace_root": str(self.workspace.repo_root),
+                "cwd": str(self.workspace.cwd),
+                "model": self.config.model,
+                "system_prompt_hash": self.system_prompt.hash,
+                "source": "slash_command",
+            },
+        )
+        self.save_session()
+        return self.session_id
+
     def run_hooks(self, point: HookPoint, payload: dict[str, Any] | None = None) -> HookResult:
         return self.hooks.run(
             point,

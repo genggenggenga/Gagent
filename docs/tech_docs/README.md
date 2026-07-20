@@ -12,6 +12,7 @@
 | Harness 4：Hooks / Runtime Events | [04-hooks-runtime-events.md](04-hooks-runtime-events.md) |
 | Harness 5：TodoWrite / Task Progress State | [05-todowrite-task-progress.md](05-todowrite-task-progress.md) |
 | Harness 6：Session 持久化 / Resume | [06-session-persistence-resume.md](06-session-persistence-resume.md) |
+| Harness 7：Slash Commands | [07-slash-commands.md](07-slash-commands.md) |
 
 ## 维护约定
 
